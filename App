@@ -1,0 +1,87 @@
+import tkinter as tk
+from tkinter import ttk, filedialog
+from datetime import datetime
+import subprocess
+import threading
+import time
+from tkcalendar import DateEntry
+
+class App:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Scheduler App")
+
+        # Ustawienia okna
+        self.root.geometry("400x250")
+
+        # Zmienne przechowujące dane wprowadzone przez użytkownika
+        self.target_date_var = tk.StringVar()
+        self.application_path_var = tk.StringVar()
+
+        # Utwórz etykiety i pola wprowadzania dla daty, godziny i ścieżki do aplikacji
+        ttk.Label(root, text="Data:").grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        self.date_entry = DateEntry(root, textvariable=self.target_date_var, width=12, background='darkblue', foreground='white', borderwidth=2)
+        self.date_entry.grid(row=0, column=1, padx=10, pady=10)
+
+        ttk.Label(root, text="Godzina:").grid(row=1, column=0, padx=10, pady=10, sticky="w")
+        self.time_combobox = ttk.Combobox(root, values=[str(i).zfill(2) for i in range(24)], state="readonly")
+        self.time_combobox.grid(row=1, column=1, padx=10, pady=10)
+        self.time_combobox.set("12")
+
+        ttk.Label(root, text="Minuta:").grid(row=1, column=2, padx=10, pady=10, sticky="w")
+        self.minute_combobox = ttk.Combobox(root, values=[str(i).zfill(2) for i in range(60)], state="readonly")
+        self.minute_combobox.grid(row=1, column=3, padx=10, pady=10)
+        self.minute_combobox.set("00")
+
+        ttk.Label(root, text="Ścieżka do aplikacji:").grid(row=2, column=0, padx=10, pady=10, sticky="w")
+        self.path_entry = ttk.Entry(root, textvariable=self.application_path_var)
+        self.path_entry.grid(row=2, column=1, columnspan=3, padx=10, pady=10)
+
+        # Utwórz przycisk do wyboru ścieżki
+        ttk.Button(root, text="Wybierz ścieżkę", command=self.choose_path).grid(row=2, column=4, padx=10, pady=10)
+
+        # Utwórz przycisk do uruchamiania programu
+        ttk.Button(root, text="Uruchom", command=self.run_program).grid(row=3, column=0, columnspan=5, pady=10)
+
+    def choose_path(self):
+        # Wybierz ścieżkę za pomocą okna dialogowego
+        path = filedialog.askopenfilename()
+        self.application_path_var.set(path)
+
+    def run_program(self):
+        # Pobierz dane wprowadzone przez użytkownika
+        selected_date = self.date_entry.get_date()
+        hour_str = self.time_combobox.get()
+        minute_str = self.minute_combobox.get()
+        application_path = self.application_path_var.get()
+
+        try:
+            # Utwórz obiekt datetime z datą i godziną
+            target_date = datetime.combine(selected_date, datetime.strptime(f"{hour_str}:{minute_str}", "%H:%M").time())
+        except ValueError:
+            # W przypadku błędu przekształcenia daty, pokaż komunikat o błędzie
+            tk.messagebox.showerror("Błąd", "Nieprawidłowy format daty i godziny.")
+            return
+
+        # Uruchom wątek do sprawdzania daty i uruchamiania aplikacji
+        threading.Thread(target=self.monitor_date, args=(target_date, application_path)).start()
+
+    def monitor_date(self, target_date, application_path):
+        while True:
+            current_date = datetime.now()
+
+            # Sprawdź, czy osiągnięto zadany termin
+            if current_date >= target_date:
+                # Uruchom aplikację
+                subprocess.run(application_path, shell=True)
+
+                # Zakończ pętlę po uruchomieniu aplikacji
+                break
+
+            # Odczekaj pewien czas przed ponownym sprawdzeniem daty
+            time.sleep(60)  # Czekaj 60 sekund przed ponownym sprawdzeniem
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = App(root)
+    root.mainloop()
