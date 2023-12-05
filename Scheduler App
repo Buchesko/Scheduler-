@@ -1,0 +1,154 @@
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from datetime import datetime, timedelta
+import subprocess
+import threading
+import time
+from tkcalendar import DateEntry
+
+class App:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Scheduler App")
+
+        # Ustawienia okna
+        self.root.geometry("800x00")
+
+        # Zmienne przechowujące dane wprowadzone przez użytkownika
+        self.target_date_var = tk.StringVar()
+        self.application_path_var = tk.StringVar()
+
+        # Lista przechowująca zdarzenia
+        self.events_list = []
+
+        # Utwórz etykiety i pola wprowadzania dla daty, godziny i ścieżki do aplikacji
+        ttk.Label(root, text="Data:").grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        self.date_entry = DateEntry(root, textvariable=self.target_date_var, width=12, background='darkblue', foreground='white', borderwidth=2)
+        self.date_entry.grid(row=0, column=1, padx=10, pady=10)
+
+        ttk.Label(root, text="Godzina:").grid(row=1, column=0, padx=10, pady=10, sticky="w")
+        self.time_combobox = ttk.Combobox(root, values=[str(i).zfill(2) for i in range(24)], state="readonly")
+        self.time_combobox.grid(row=1, column=1, padx=10, pady=10)
+        self.time_combobox.set("12")
+
+        ttk.Label(root, text="Minuta:").grid(row=1, column=2, padx=10, pady=10, sticky="w")
+        self.minute_combobox = ttk.Combobox(root, values=[str(i).zfill(2) for i in range(60)], state="readonly")
+        self.minute_combobox.grid(row=1, column=3, padx=10, pady=10)
+        self.minute_combobox.set("00")
+
+        ttk.Label(root, text="Ścieżka do aplikacji:").grid(row=2, column=0, padx=10, pady=10, sticky="w")
+        self.path_entry = ttk.Entry(root, textvariable=self.application_path_var)
+        self.path_entry.grid(row=2, column=1, columnspan=3, padx=10, pady=10)
+
+        # Utwórz przycisk do wyboru ścieżki
+        ttk.Button(root, text="Wybierz ścieżkę", command=self.choose_path).grid(row=2, column=4, padx=10, pady=10)
+
+        # Utwórz przycisk do dodawania zdarzenia
+        ttk.Button(root, text="Dodaj zdarzenie", command=self.add_event).grid(row=3, column=0, columnspan=5, pady=10)
+
+        # Utwórz listę wydarzeń
+        self.events_tree = ttk.Treeview(root, columns=("Date", "Time", "Path", "Time to Start"), show="headings")
+        self.events_tree.heading("Date", text="Data")
+        self.events_tree.heading("Time", text="Godzina")
+        self.events_tree.heading("Path", text="Ścieżka")
+        self.events_tree.heading("Time to Start", text="Czas do rozpoczęcia")
+        self.events_tree.grid(row=4, column=0, columnspan=5, padx=10, pady=10)
+
+        # Utwórz przycisk do uruchamiania zaznaczonego zdarzenia
+        ttk.Button(root, text="Uruchom zaznaczone", command=self.run_selected_event).grid(row=5, column=0, columnspan=5, pady=10)
+
+    def choose_path(self):
+        # Wybierz ścieżkę za pomocą okna dialogowego
+        path = filedialog.askopenfilename()
+        self.application_path_var.set(path)
+
+    def add_event(self):
+        # Pobierz dane wprowadzone przez użytkownika
+        selected_date = self.date_entry.get_date()
+        hour_str = self.time_combobox.get()
+        minute_str = self.minute_combobox.get()
+        application_path = self.application_path_var.get()
+
+        try:
+            # Utwórz obiekt datetime z datą i godziną
+            target_date = datetime.combine(selected_date, datetime.strptime(f"{hour_str}:{minute_str}", "%H:%M").time())
+        except ValueError:
+            # W przypadku błędu przekształcenia daty, pokaż komunikat o błędzie
+            messagebox.showerror("Błąd", "Nieprawidłowy format daty i godziny.")
+            return
+
+        # Dodaj zdarzenie do listy
+        event = {
+            "Date": target_date.strftime("%Y-%m-%d"),
+            "Time": target_date.strftime("%H:%M"),
+            "Path": application_path
+        }
+        self.events_list.append(event)
+
+        # Zaktualizuj listę zdarzeń w widoku
+        self.update_events_tree()
+
+    def update_events_tree(self):
+        # Wyczyść listę
+        for item in self.events_tree.get_children():
+            self.events_tree.delete(item)
+
+        # Dodaj zdarzenia do listy
+        for event in self.events_list:
+            time_to_start = self.calculate_time_to_start(event["Date"], event["Time"])
+            self.events_tree.insert("", "end", values=(event["Date"], event["Time"], event["Path"], time_to_start))
+
+    def calculate_time_to_start(self, date_str, time_str):
+        # Oblicz czas pozostały do rozpoczęcia zdarzenia
+        target_datetime_str = f"{date_str} {time_str}"
+        target_datetime = datetime.strptime(target_datetime_str, "%Y-%m-%d %H:%M")
+        current_datetime = datetime.now()
+
+        if current_datetime >= target_datetime:
+            return "Zdarzenie już rozpoczęło się"
+        else:
+            time_difference = target_datetime - current_datetime
+            return str(time_difference)
+
+    def run_selected_event(self):
+        # Pobierz zaznaczone zdarzenie
+        selected_item = self.events_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("Ostrzeżenie", "Wybierz zdarzenie z listy.")
+            return
+
+        # Pobierz zaznaczone zdarzenie
+        index = self.events_tree.index(selected_item)
+
+        if 0 <= index < len(self.events_list):
+            # Pobierz zdarzenie z listy
+            selected_event = self.events_list[index]
+
+            # Pobierz datę i godzinę z zaznaczonego zdarzenia
+            target_date_str = f"{selected_event['Date']} {selected_event['Time']}"
+            target_date = datetime.strptime(target_date_str, "%Y-%m-%d %H:%M")
+
+            # Uruchom wątek do sprawdzania daty i uruchamiania aplikacji
+            threading.Thread(target=self.monitor_date, args=(target_date, selected_event["Path"])).start()
+        else:
+            messagebox.showerror("Błąd", "Nieprawidłowy indeks zdarzenia.")
+
+    def monitor_date(self, target_date, application_path):
+        while True:
+            current_date = datetime.now()
+
+            # Sprawdź, czy osiągnięto zadany termin
+            if current_date >= target_date:
+                # Uruchom aplikację
+                subprocess.run(application_path, shell=True)
+
+                # Zakończ pętlę po uruchomieniu aplikacji
+                break
+
+            # Odczekaj pewien czas przed ponownym sprawdzeniem daty
+            time.sleep(60)  # Czekaj 60 sekund przed ponownym sprawdzeniem
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = App(root)
+    root.mainloop()
